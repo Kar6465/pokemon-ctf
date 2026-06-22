@@ -1,0 +1,29 @@
+# Cloned base game + all build objects/assets (17 GB; recreated by setup.sh/build)
+/game/
+
+# Generated build outputs (too big for GitHub: 100 MB/file limit)
+/out/
+/pokemon_ctf.pdf
+*.pdf
+*.mem
+
+# Python virtualenv (recreated by build_pdf.sh)
+/.venv/
+
+# Emscripten SDK if it lands here
+/emsdk/
+
+# Build logs / scratch
+build.log
+frame.png
+
+# Native build artifacts (from `make` test builds)
+*.dSYM/
+*.o
+patch/pokemon_grey
+patch/pokemon_asan
+pokemon_grey
+
+# OS / editor
+.DS_Store
+node_modules/
