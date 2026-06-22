@@ -1,189 +1,167 @@
-# Pokémon Inside a PDF — An In-Depth Writeup
+# Pokémon in a PDF — Writeup
 
-> A complete Pokémon fan game (Pokemon-Grey, C++/SDL2) compiled and embedded so it
-> **runs, renders, and is playable inside a single PDF file**, opened in Chrome —
-> with a hidden CTF flag recoverable by reverse-engineering the program's memory.
+A C++/SDL2 Pokémon fan game (Pokemon-Grey) compiled to asm.js and embedded in a
+PDF. It runs and is playable in Chrome. A flag is hidden in the program's memory.
 
-This document explains, in depth: *why this is even possible*, *how it was built*,
-*every wall we hit and how we got past it*, and *how the CTF is solved*.
+Flag: `FLAG{p0k3m0n_1n_4_pdf_gg}`
 
 ---
 
-## 1. The premise: a PDF is a (terrible, wonderful) computer
+## How it runs in a PDF
 
-Most people think of a PDF as a static document. But the PDF specification includes
-an **embedded JavaScript** feature (originally for form validation — "auto-fill this
-field, check that date"). Chrome's built-in PDF viewer (pdfium) ships a JavaScript
-engine to run it.
+PDFs can carry JavaScript (form logic). Chrome's PDF engine (pdfium) executes it.
+That engine has JS, form fields, and `app.setInterval`. It has no canvas, WebGL,
+DOM, WebAssembly, network, or audio.
 
-That engine is extremely restricted. It has:
+So the game is built as **asm.js** (plain JS, not WASM) with Emscripten 1.39.20
+fastcomp, and embedded as the PDF's document-open script. Three pieces make it work:
 
-- ✅ JavaScript execution
-- ✅ form fields (text boxes, buttons) readable/writable from JS
-- ✅ `app.setInterval(...)` — a timer
-- ❌ no `<canvas>`, no WebGL, no DOM, no network, no Web Audio, **no WebAssembly**
-- ❌ no `crypto`, no `performance`, no `console`, no `document`/`window`
+- **Rendering:** the OpenGL renderer was replaced with a software rasterizer
+  (`Gfx` in `patch/Graphics.cpp`) that draws into a CPU RGBA buffer. Each frame the
+  buffer is converted to ASCII (one character per pixel, picked by brightness) and
+  written into a 480×270 grid of text form-fields. `field_0..field_269`.
+- **Input:** form buttons and a text field call an exported `pokemon_key(code,down)`
+  that fills a key table the game polls each frame.
+- **Loop:** `main()` sets up and returns; `app.setInterval` calls an exported
+  `pokemon_tick()` once per frame.
 
-The whole project is an exercise in: *given only "run JS + write to text fields + a
-timer," can you run a real C++/SDL game?* The answer — following the lead of
-[doompdf](https://github.com/ading2210/doompdf), which did this for DOOM — is **yes**,
-if you solve three problems: **run the code**, **draw the pixels**, and **read input**.
+The bridge that wires all this to pdfium is `patch/pokemon_pre.js` (~200 lines).
+Everything else in the PDF is the Emscripten output.
 
 ---
 
-## 2. Architecture: how a C++ game becomes a PDF
+## Build notes (short)
 
+asm.js needs fastcomp, which is x86-only and removed from modern emsdk. On Apple
+Silicon it runs under qemu, where the 2020 clang and node segfault randomly. The
+build (`scripts/_docker_build_robust.sh`) wraps clang/node in retry-shims and runs
+node `--jitless`. Other fixes: drop the dead `jpg` libjpeg port; init only
+`SDL_INIT_TIMER`; polyfill `crypto`/`performance`/`console`; `-s
+EMULATE_FUNCTION_POINTER_CASTS=1`; fix a `new[]`/`free()` heap bug in `Map::GoTo`
+that crashed map warps under Emscripten. See `CLAUDE.md` for the full list.
+
+---
+
+## Solving it
+
+The flag is XOR-encoded with the repeating 7-byte key `GREYKEY` and stored in the
+program's memory. Plaintext never appears in the file. The solve has three parts:
+get the code out of the PDF, run it, read the flag out of the heap.
+
+### 1. Get the JavaScript out of the PDF
+
+The game is the PDF's OpenAction script. Pull it out.
+
+mutool:
 ```
-Pokemon-Grey (C++/SDL2)
-      │  Emscripten 1.39.20 (fastcomp)
-      ▼
-   game.js  (asm.js — plain JavaScript, NOT WebAssembly)
-      │  +  pokemon_pre.js  (the bridge)
-      ▼
-   generate_pdf.py  →  pokemon_ctf.pdf
-```
-
-### 2a. Run the code → asm.js (not WASM)
-We compile the C++ to **asm.js** — a stylized but 100% valid subset of JavaScript
-that encodes a whole C program. Why not WebAssembly? Because pdfium's JS engine has
-no WASM. asm.js is "just JavaScript," so it runs. The entire game — logic, assets,
-memory — becomes one big `.js` blob, embedded into the PDF as the page's
-**OpenAction** (a script that runs when the document opens).
-
-### 2b. Draw the pixels → a grid of text fields
-There is no screen. So — doompdf's core trick — the PDF contains a **grid of text
-form-fields**, one per screen row (`field_0`, `field_1`, …). Each frame, JS writes a
-long string into each field's `.value`, choosing a character per pixel by brightness:
-
-```
-bright → "_"   ::   "?"   "//"   "b"   "#"  ← dark
+mutool show pokemon_ctf.pdf js > game_js.txt
 ```
 
-From a distance, that wall of characters *is* a low-res grayscale image. (Those exact
-glyphs were chosen by doompdf because they render at equal width in Chrome's
-text-field font.)
-
-**The original Pokemon-Grey rendered with OpenGL** — which pdfium does not have. So
-the single biggest piece of work was **rewriting the renderer**: we replaced the
-entire immediate-mode OpenGL backend (`glBegin/glVertex/glEnd`, textured quads) with
-a **software rasterizer** (`Gfx` in `patch/Graphics.cpp`) that draws into a CPU RGBA
-buffer. Conveniently, the GL code was *already* a 2D textured-quad blitter, so the
-port is a faithful 1:1 software rasterizer: every `Draw::*` computes 4 screen-space
-corners + UVs and hands them to one `BlitQuad()` (two triangles, barycentric UV
-interpolation, nearest sampling, alpha blend). The framebuffer is rendered directly
-at the text-field grid resolution and pushed to JS via `EM_ASM(update_framebuffer)`.
-
-### 2c. Read input → buttons + a typing field
-No keyboard events exist. The PDF has **form buttons** (a D-pad + OK/ESC/TEAM/BAG)
-whose click actions call into the JS, plus a text field you type into. Those feed an
-exported C function `pokemon_key(code, down)`, which fills a key-state table that the
-game polls each frame instead of reading SDL events.
-
-### 2d. The loop → a timer
-A PDF has no `requestAnimationFrame` and no SDL event loop. DOOM exposes a tick
-function called from a timer; we do the same: `main()` sets the game up and returns,
-and `app.setInterval("pokemon_tick()", 40)` drives one frame per tick. (`main.cpp`
-was split into `SetupGame()` + `Frame()` so the native build keeps its `while` loop
-while the PDF build is purely tick-driven.)
-
----
-
-## 3. The build odyssey (this was the hard part)
-
-asm.js can only be produced by Emscripten's old **fastcomp** backend, pinned to
-version **1.39.20**. Modern Emscripten removed fastcomp entirely. And fastcomp's
-binaries are **x86-64 only** — which matters a lot on an Apple Silicon Mac.
-
-We build inside Docker (`colima`, `--platform linux/amd64`). The walls, in order:
-
-1. **`the fastcomp backend is no longer supported`** — modern `emsdk` refuses to
-   install fastcomp. Fix: clone `emsdk` pinned to the `1.39.20` *tag*.
-2. **Random `clang` segfaults under emulation** — the 2020-era x86 clang, run under
-   qemu on ARM, **segfaults stochastically** (different file each run), so a
-   monolithic build never finishes. Fix: a **shim** that wraps `clang`/`clang++` and
-   **retries on any crash signature**. This made even the 50-file SDL2 port build.
-3. **Dead download** — Emscripten 1.39.20's libjpeg port fetches from
-   `dl.bintray.com`, which JFrog shut down in 2021 (404). Fix: the game has no JPEGs,
-   so drop `jpg` from the SDL_image formats.
-4. **`node` crashes too** — the link step runs Emscripten's JS compiler/minifier in
-   `node`, whose V8 **JIT also crashes under qemu**, plus OOMs on the huge file. Fix:
-   shim `node` with `--jitless` (pure interpreter — emulation-stable) + a big heap +
-   retry.
-5. **`undefined symbol: pthread_mutex_unlock`** during link. A misguided
-   `ERROR_ON_UNDEFINED_SYMBOLS=0` "fixed" it but **silently stubbed freetype**, so
-   font init aborted (`FT_New_Memory`). Fix: remove that flag; the objects link
-   cleanly.
-6. **Runtime aborts in the PDF**, fixed one by one as each missing browser API
-   surfaced:
-   - `std::random_device` → polyfill `crypto.getRandomValues`.
-   - `SDL_Init` timer → polyfill `performance.now`.
-   - `SDL_Init(VIDEO|AUDIO)` reaches for `document`/`AudioContext` → only init
-     `SDL_INIT_TIMER` under Emscripten (we don't use SDL video/audio).
-   - `"Library not initialized"` → must still init the SDL *library* (timer).
-   - `"Invalid function pointer signature 'iii'"` → `-s EMULATE_FUNCTION_POINTER_CASTS=1`.
-
-Only after all of that does the overworld actually render inside the PDF.
-
----
-
-## 4. The CTF
-
-### The flag
-`FLAG{p0k3m0n_1n_4_pdf_gg}`, XOR'd with the repeating 7-byte key `GREYKEY`. The
-**encoded** bytes (`g_flag_enc[]` in `patch/GUI.cpp`) and the key are compiled into
-the program — the **plaintext is never present** (verified: `strings`/`grep` on the
-JS find nothing). `write_ctf_flag()` also copies the bytes into a live buffer on a
-battle win, but the data is in the program's static memory from startup regardless.
-
-### Intended solve
-1. Open `pokemon_ctf.pdf` in Chrome → it's a playable game → realize it contains
-   embedded JavaScript.
-2. **Extract the JS** from the PDF (it's the OpenAction): `mutool show … js`,
-   `pdf-parser.py`, `pikepdf`, or `strings`.
-3. Recognize **asm.js**. `grep FLAG` → nothing. It's not a freebie; it's a memory RE.
-4. The flag is XOR-obfuscated in the program **heap**. Run the JS, read
-   `Module.HEAPU8` (exported), and XOR-scan for the `FLAG{` pattern using `GREYKEY`:
-   ```js
-   flag[i] = heap[N + i] ^ "GREYKEY".charCodeAt(i % 7)
-   ```
-   → `FLAG{p0k3m0n_1n_4_pdf_gg}`. (See `solve/solve.js`.)
-
-### Difficulty knobs
-- Easier: tell solvers "XOR key is 7 bytes, in memory."
-- Harder: don't; force them to dump the heap, `strings` it to spot `GREYKEY`, and
-  derive the obfuscation. (Truly hardening it would mean computing the key at runtime
-  so it isn't in the file at all.)
-
----
-
-## 5. Honest limitations
-
-- **Battles don't run in the PDF.** `FightGUI::Battle()` is a nested blocking loop;
-  the PDF's timer-driven model can't re-enter it, so a battle freezes the game. Avoid
-  tall grass when demoing. (Porting it to the tick model is the main remaining work.)
-- **The base game is a tech demo.** Pokemon-Grey has only **3 small maps**, **1 NPC**,
-  and **1 scripted dialogue** (the starter choice) — plus a full battle engine. The
-  small world is all the upstream repo ever had; we changed *how* it runs, not its
-  content.
-- **The file is large (~196 MB).** It's an unminified (`-O0`) asm.js build with
-  ~17 MB of embedded art. A full `-O2`/`-Os` build would shrink it a lot, but the
-  size-optimization (minify) pass is brutally slow under emulation.
-
----
-
-## 6. How to build / run / solve
-
-```bash
-# Build (x86-64 Linux, or Docker on any Intel host; on Apple Silicon use the
-# shimmed Docker flow in scripts/_docker_build_robust.sh):
-bash scripts/build_all.sh        # deps + clone + patch + asm.js + PDF
-# → pokemon_ctf.pdf
-
-# Play:  open pokemon_ctf.pdf in Chrome/Edge. WASD or the D-pad. Avoid tall grass.
-
-# Solve: extract the JS from the PDF, then
-node --max-old-space-size=8192 solve/solve.js game/out/game.js
+Or with Python (pikepdf), which is robust against odd structure:
+```python
+import pikepdf
+pdf = pikepdf.open("pokemon_ctf.pdf")
+# OpenAction on the document or page AA/O; dump every JS action found:
+def walk(o, seen=set()):
+    if id(o) in seen: return
+    seen.add(id(o))
+    if isinstance(o, pikepdf.Dictionary):
+        if o.get("/S") == pikepdf.Name("/JavaScript") and "/JS" in o:
+            js = o["/JS"]
+            print(bytes(js) if isinstance(js, pikepdf.String) else js)
+        for v in o.values(): walk(v, seen)
+    elif isinstance(o, pikepdf.Array):
+        for v in o: walk(v, seen)
+walk(pdf.Root)
 ```
 
-See `CLAUDE.md` for the live project state, the full rebuild recipe, and every
-build gotcha; `PORTING.md` for the renderer-port design.
+Crude fallback: the script is a giant ASCII blob, so `strings`/`binwalk` will also
+surface it.
+
+You end up with one large `.js` file.
+
+### 2. Identify it
+
+It's Emscripten asm.js. Tells: `"use asm"`, `Module`, `HEAPU8`, `_malloc`,
+`asmGlobalArg`. The flag is not in plaintext:
+```
+strings game_js.txt | grep -i flag        # nothing
+grep -a GREYKEY game_js.txt               # nothing
+```
+The key and the encoded bytes live in the compiled memory image, not the source
+text, so you have to run the program and read its heap.
+
+### 3. Run it and read the heap
+
+The program's static data (the key and the encoded flag bytes) is loaded into the
+heap (`Module.HEAPU8`) at startup, before any gameplay. You do not need to play.
+
+Run the JS in a JS engine with the browser/PDF APIs stubbed, then scan the heap.
+Two facts make the scan trivial:
+
+- The key `GREYKEY` sits in the heap as a plain 7-byte ASCII string. `strings` on a
+  heap dump shows it.
+- The encoded flag bytes are 26 bytes that, XORed with the repeating key, start with
+  `FLAG{`.
+
+Scan: for every offset `p`, check whether `heap[p..p+5] ^ GREYKEY == "FLAG{"`. When
+it matches, decode 25 bytes.
+
+```js
+// solve.js  —  node --max-old-space-size=8192 solve.js game.js
+var path = process.argv[2];
+var Module = { print(){}, printErr(){}, onRuntimeInitialized: scan };
+global.Module = Module;
+globalThis.getField = () => ({ value: "" });          // stub pdfium form API
+global.app = { setInterval(){}, setTimeOut(){} };
+global.crypto = { getRandomValues: a => a };           // stub Web Crypto
+global.performance = { now: () => 0 };
+require(require("path").resolve(path));
+
+function scan() {
+  var H = Module.HEAPU8, K = "GREYKEY";
+  for (var p = 0; p < H.length - 26; p++) {
+    var hit = true;
+    for (var j = 0; j < 5; j++)
+      if ((H[p + j] ^ K.charCodeAt(j % 7)) !== "FLAG{".charCodeAt(j)) { hit = false; break; }
+    if (hit) {
+      var f = "";
+      for (var k = 0; k < 25; k++) f += String.fromCharCode(H[p + k] ^ K.charCodeAt(k % 7));
+      console.log(f);                                   // FLAG{p0k3m0n_1n_4_pdf_gg}
+      process.exit(0);
+    }
+  }
+}
+```
+
+`solve/solve.js` in this repo is this scanner. The build exports `HEAPU8` so it is
+readable.
+
+Note: the JS file is ~190 MB (unoptimized asm.js plus embedded art). Loading it in a
+bare node process is slow and occasionally flaky because of the embedded-filesystem
+init. A real browser runs it cleanly; if you want the heap interactively, load the
+extracted JS in a blank HTML page and inspect `Module.HEAPU8` in DevTools.
+
+### 4. The decode, by hand
+
+If you prefer to do it without the scanner, once you have the 26 encoded bytes
+`enc` and the key:
+
+```python
+enc = [0x01,0x1e,0x04,0x1e,0x30,0x35,0x69,0x2c,0x61,0x28,0x69,0x25,0x1a,
+       0x68,0x29,0x0d,0x71,0x06,0x3b,0x21,0x3f,0x18,0x35,0x22,0x24,0x4b]
+key = b"GREYKEY"
+print("".join(chr(enc[i] ^ key[i % 7]) for i in range(25)))
+# FLAG{p0k3m0n_1n_4_pdf_gg}
+```
+
+---
+
+## Limitations
+
+- Battles freeze in the PDF. `FightGUI::Battle()` is a nested blocking loop the
+  timer-driven model can't re-enter. Avoid tall grass.
+- The base game is a small demo: 3 maps (town, one interior, one route), 1 NPC, 1
+  dialogue, plus a full battle engine. The flag does not depend on any of it.
+- ~196 MB file. `-O0` build with embedded assets. A full `-O2`/`-Os` build shrinks
+  it but the minify step is very slow under emulation.
