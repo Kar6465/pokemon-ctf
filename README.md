@@ -69,7 +69,7 @@ Pokemon-Grey C++  →  Emscripten 1.39.20  →  game.js (asm.js)
 
 When the player wins a battle, `write_ctf_flag()` fires once and copies the
 XOR-encoded flag bytes into a global byte buffer `g_flag_buf[]`. The flag is
-`FLAG{p0k3m0n_1n_4_pdf_gg}` XOR'd with the repeating key `GREYKEY`. The bytes are
+`dfnd{p0k3m0n_1n_4_pdf_gg}` XOR'd with the repeating key `GREYKEY`. The bytes are
 stored **already encoded** in the source (`g_flag_enc[]`) — the plaintext is never
 present in the binary, so `strings` on the asm.js will not reveal it. The key
 `GREYKEY` is intentionally left findable (as the `XOR_KEY` global).
@@ -89,7 +89,7 @@ const enc = [/* the 26 bytes found in the asm.js */];
 let flag = "";
 for (let i = 0; i < 25; i++)   // flag is 25 bytes (a 26th XOR'd NUL follows)
     flag += String.fromCharCode(enc[i] ^ key.charCodeAt(i % 7));
-console.log(flag); // FLAG{p0k3m0n_1n_4_pdf_gg}
+console.log(flag); // dfnd{p0k3m0n_1n_4_pdf_gg}
 ```
 
 `write_ctf_flag()` also copies those bytes into `g_flag_buf[]` (live memory,

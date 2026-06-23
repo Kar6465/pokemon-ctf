@@ -7,7 +7,7 @@
 ## Prompt
 
 > We pulled this PDF off a machine. Open it in Chrome — it's not a normal document.
-> There's a flag in it. Format: `FLAG{...}`
+> There's a flag in it. Format: `dfnd{...}`
 
 ## How to solve (author reference)
 
@@ -23,23 +23,23 @@
 3. You'll see two things sitting next to each other:
    ```js
    var SAVE_KEY = "GREYKEY";
-   var SAVE_REC = [0x01, 0x1e, 0x04, ...];   // 26 bytes
+   var SAVE_REC = [0x23, 0x34, 0x2b, ...];   // 26 bytes
    ```
    The comment says the record is "obfuscated... XOR'd against the save key."
 4. XOR the record with the repeating key:
    ```python
    key = b"GREYKEY"
-   rec = [0x01,0x1e,0x04,0x1e,0x30,0x35,0x69,0x2c,0x61,0x28,0x69,0x25,0x1a,
+   rec = [0x23, 0x34, 0x2b, 0x3d,0x30,0x35,0x69,0x2c,0x61,0x28,0x69,0x25,0x1a,
           0x68,0x29,0x0d,0x71,0x06,0x3b,0x21,0x3f,0x18,0x35,0x22,0x24,0x4b]
    print("".join(chr(rec[i]^key[i%7]) for i in range(25)))
-   # FLAG{p0k3m0n_1n_4_pdf_gg}
+   # dfnd{p0k3m0n_1n_4_pdf_gg}
    ```
    Or just run the included solver against the PDF:
    ```
    node solve/solve.js pokemon_ctf.pdf
    ```
 
-**Flag:** `FLAG{p0k3m0n_1n_4_pdf_gg}`
+**Flag:** `dfnd{p0k3m0n_1n_4_pdf_gg}`
 
 ## Staged hints (for a scoreboard)
 

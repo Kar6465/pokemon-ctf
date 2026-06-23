@@ -709,11 +709,11 @@ volatile int           g_flag_written = 0;
 // The flag is stored ALREADY XOR-encoded so the plaintext never appears
 // anywhere in the compiled asm.js (a plaintext literal would be trivially
 // recoverable with `strings`, defeating the whole challenge). These bytes are
-// "FLAG{p0k3m0n_1n_4_pdf_gg}" XOR the repeating key "GREYKEY", plus one XOR'd
+// "dfnd{p0k3m0n_1n_4_pdf_gg}" XOR the repeating key "GREYKEY", plus one XOR'd
 // NUL terminator byte. Players recover the flag by XOR-ing g_flag_buf with the
 // key (which is intentionally left findable in the binary as XOR_KEY).
 static const unsigned char g_flag_enc[] = {
-    0x01, 0x1e, 0x04, 0x1e, 0x30, 0x35, 0x69, 0x2c, 0x61, 0x28, 0x69, 0x25,
+    0x23, 0x34, 0x2b, 0x3d, 0x30, 0x35, 0x69, 0x2c, 0x61, 0x28, 0x69, 0x25,
     0x1a, 0x68, 0x29, 0x0d, 0x71, 0x06, 0x3b, 0x21, 0x3f, 0x18, 0x35, 0x22,
     0x24, 0x4b
 };

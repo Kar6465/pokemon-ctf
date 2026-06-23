@@ -20,4 +20,4 @@ for (let i = 0; i < rec.length; i++) {
   if (c === 0) break;            // stop at the XOR'd NUL terminator
   flag += String.fromCharCode(c);
 }
-console.log(flag);                // FLAG{p0k3m0n_1n_4_pdf_gg}
+console.log(flag);                // dfnd{p0k3m0n_1n_4_pdf_gg}

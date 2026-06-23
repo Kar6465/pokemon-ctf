@@ -36,7 +36,7 @@ flag embedded). Players don't need the source. Current size ~196 MB.
   grass / trainer fights when demoing. (This is "Phase 3b" — see TODO.)
 
 ## The CTF flag
-- `FLAG{p0k3m0n_1n_4_pdf_gg}` XOR'd with repeating key `GREYKEY`.
+- `dfnd{p0k3m0n_1n_4_pdf_gg}` XOR'd with repeating key `GREYKEY`.
 - Stored **already-encoded** as `g_flag_enc[]` in `patch/GUI.cpp` (no plaintext in
   the binary). Written to `g_flag_buf` on a battle win, but also **statically
   recoverable from the embedded JS** — so the challenge does NOT require playing.
@@ -103,7 +103,7 @@ greppable "save data" in the readable bridge at the top of the embedded script:
 1. Open `pokemon_ctf.pdf` in Chrome → playable game → it has embedded JS.
 2. Extract the JS (`mutool show ... js`, or `strings`/`grep` the PDF directly).
 3. Find `SAVE_KEY` + `SAVE_REC` near each other in the readable header.
-4. XOR: `flag[i] = SAVE_REC[i] ^ "GREYKEY"[i%7]` → `FLAG{p0k3m0n_1n_4_pdf_gg}`.
+4. XOR: `flag[i] = SAVE_REC[i] ^ "GREYKEY"[i%7]` → `dfnd{p0k3m0n_1n_4_pdf_gg}`.
 5. Solver: `node solve/solve.js pokemon_ctf.pdf` (static; verified, prints the flag).
    Player-facing prompt + staged hints live in `CHALLENGE.md`.
 (The C++ `g_flag_enc`/`GREYKEY` heap version still exists but is the hard/runtime
@@ -113,7 +113,7 @@ flavor; the static save-data path above is the intended solve.)
 - **Made the CTF actually solvable:** embedded the obfuscated flag as greppable
   `SAVE_KEY`/`SAVE_REC` in pokemon_pre.js (the heap-only path was unsolvable in
   practice). Added CHALLENGE.md (prompt + hints); solve/solve.js is now a static
-  XOR solver that runs on the PDF directly (verified → FLAG{...}).
+  XOR solver that runs on the PDF directly (verified → dfnd{...}).
 - D-pad buttons now PULSE on click (key_btn, ~280ms) instead of key_down/key_up —
   a quick tap was too brief for the game's input poll, so the D-pad did nothing.
 - Fixed `Map::GoTo()` freeing `new[]` arrays (`_map`, `_collision`) with `free()` —
