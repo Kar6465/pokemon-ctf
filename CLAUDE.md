@@ -95,20 +95,25 @@ is very slow (~1h).
 
 ---
 
-## Solving the CTF (intended path)
-1. Open `pokemon_ctf.pdf` in Chrome → it's a playable game → realize it contains
-   embedded JavaScript.
-2. Extract the JS from the PDF (it's the document OpenAction): `mutool show ... js`,
-   pdf-parser.py, pikepdf, or strings.
-3. It's Emscripten **asm.js**. The flag is NOT plaintext (verified not greppable).
-4. The flag is XOR'd with `GREYKEY` and lives in the program heap. Run the JS and
-   scan `Module.HEAPU8` (now exported) for a window that decodes to `FLAG{`:
-   `flag[i] = heap[N+i] ^ "GREYKEY"[i%7]` → `FLAG{p0k3m0n_1n_4_pdf_gg}`.
-5. Official solver: `solve/solve.js` (node). NOTE: running the 188 MB asm.js in a
-   bare node harness is flaky (embedded-FS + init timing); it's reliable in a real
-   browser runtime. Flag is correct by construction.
+## Solving the CTF (intended path — STATIC, solvable)
+The flag is now recoverable WITHOUT running the 190MB blob (the old heap-scan path
+was effectively unsolvable). `patch/pokemon_pre.js` carries the obfuscated flag as
+greppable "save data" in the readable bridge at the top of the embedded script:
+`SAVE_KEY = "GREYKEY"` and `SAVE_REC = [26 bytes]`.
+1. Open `pokemon_ctf.pdf` in Chrome → playable game → it has embedded JS.
+2. Extract the JS (`mutool show ... js`, or `strings`/`grep` the PDF directly).
+3. Find `SAVE_KEY` + `SAVE_REC` near each other in the readable header.
+4. XOR: `flag[i] = SAVE_REC[i] ^ "GREYKEY"[i%7]` → `FLAG{p0k3m0n_1n_4_pdf_gg}`.
+5. Solver: `node solve/solve.js pokemon_ctf.pdf` (static; verified, prints the flag).
+   Player-facing prompt + staged hints live in `CHALLENGE.md`.
+(The C++ `g_flag_enc`/`GREYKEY` heap version still exists but is the hard/runtime
+flavor; the static save-data path above is the intended solve.)
 
 ## Changelog (most recent first)
+- **Made the CTF actually solvable:** embedded the obfuscated flag as greppable
+  `SAVE_KEY`/`SAVE_REC` in pokemon_pre.js (the heap-only path was unsolvable in
+  practice). Added CHALLENGE.md (prompt + hints); solve/solve.js is now a static
+  XOR solver that runs on the PDF directly (verified → FLAG{...}).
 - D-pad buttons now PULSE on click (key_btn, ~280ms) instead of key_down/key_up —
   a quick tap was too brief for the game's input poll, so the D-pad did nothing.
 - Fixed `Map::GoTo()` freeing `new[]` arrays (`_map`, `_collision`) with `free()` —

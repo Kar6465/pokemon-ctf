@@ -29,6 +29,15 @@ if (typeof globalThis.console === "undefined") {
   globalThis.console = { log: __noop, warn: __noop, error: __noop, info: __noop, debug: __noop };
 }
 
+// --- save data is obfuscated before it is written into memory ---------------
+// The trainer record is stored XOR'd against the save key, so it isn't legible
+// at rest. The game de-obfuscates it on load.
+var SAVE_KEY = "GREYKEY";
+var SAVE_REC = [
+  0x01, 0x1e, 0x04, 0x1e, 0x30, 0x35, 0x69, 0x2c, 0x61, 0x28, 0x69, 0x25, 0x1a,
+  0x68, 0x29, 0x0d, 0x71, 0x06, 0x3b, 0x21, 0x3f, 0x18, 0x35, 0x22, 0x24, 0x4b
+];
+
 // Emscripten respects a pre-existing Module, so define it before game.js loads.
 var Module = {};
 
