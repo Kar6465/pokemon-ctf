@@ -13,14 +13,14 @@
 
 1. Open `pokemon_ctf.pdf` in Chrome. It's a playable Pokémon game. A PDF running a
    game means it carries **embedded JavaScript**.
-2. Extract that JavaScript. It's the document's open-action script. Any of:
+2. The script is stored uncompressed in the PDF, so just read it with `strings`.
+   (Don't use `mutool show … js` — that only dumps *document-level* JavaScript and
+   this script is a page open-action, so it comes back empty.)
    ```
-   mutool show pokemon_ctf.pdf js > game.js
-   strings pokemon_ctf.pdf | less
+   strings pokemon_ctf.pdf | grep -A6 SAVE_KEY      # jumps straight to the data
+   strings pokemon_ctf.pdf | less                   # or read the whole bridge
    ```
-   (Most of it is a huge compiled blob; the useful part is the short readable
-   header at the top.)
-3. In that script, find two things sitting near each other:
+3. You'll see two things sitting next to each other:
    ```js
    var SAVE_KEY = "GREYKEY";
    var SAVE_REC = [0x01, 0x1e, 0x04, ...];   // 26 bytes

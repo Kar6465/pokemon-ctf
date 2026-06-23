@@ -48,14 +48,17 @@ The flag is XOR-encoded with the repeating 7-byte key `GREYKEY` and stored in th
 embedded script as obfuscated "save data." You recover it statically — no need to
 run the game.
 
-### 1. Extract the JavaScript from the PDF
+### 1. Read the embedded script
 
-The game is the PDF's open-action script.
+The script is stored uncompressed, so `strings` reads it. (`mutool show … js`
+returns nothing here — it only dumps document-level JS, and this is a page
+open-action.)
 ```
-mutool show pokemon_ctf.pdf js > game.js     # or: strings pokemon_ctf.pdf | less
+strings pokemon_ctf.pdf | grep -A6 SAVE_KEY    # straight to the data
+strings pokemon_ctf.pdf | less                 # or read the whole bridge header
 ```
-Most of it is a huge compiled blob. The useful part is the short, human-written
-header at the top (the bridge).
+Most of the script is a huge compiled blob; the useful part is the short,
+human-written header at the top.
 
 ### 2. Find the obfuscated data
 
